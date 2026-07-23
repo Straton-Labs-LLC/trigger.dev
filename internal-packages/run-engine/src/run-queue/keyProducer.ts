@@ -22,6 +22,8 @@ const constants = {
   MASTER_QUEUE_PART: "masterQueue",
   WORKER_QUEUE_PART: "workerQueue",
   CK_INDEX_PART: "ckIndex",
+  CK_VTIME_PART: "ckVtime",
+  CK_VTIME_FLOOR_PART: "ckVtimeFloor",
   LENGTH_COUNTER_PART: "lengthCounter",
   RUNNING_COUNTER_PART: "runningCounter",
 } as const;
@@ -315,6 +317,14 @@ export class RunQueueFullKeyProducer implements RunQueueKeyProducer {
   ckIndexKeyFromQueue(queue: string): string {
     const baseQueue = queue.replace(/:ck:.+$/, "");
     return `${baseQueue}:${constants.CK_INDEX_PART}`;
+  }
+
+  ckVtimeKeyFromQueue(queue: string): string {
+    return `${this.baseQueueKeyFromQueue(queue)}:${constants.CK_VTIME_PART}`;
+  }
+
+  ckVtimeFloorKeyFromQueue(queue: string): string {
+    return `${this.baseQueueKeyFromQueue(queue)}:${constants.CK_VTIME_FLOOR_PART}`;
   }
 
   baseQueueKeyFromQueue(queue: string): string {
