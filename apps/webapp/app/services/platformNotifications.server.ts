@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import { trail } from "agentcrumbs"; // @crumbs
 import { errAsync, fromPromise, type ResultAsync } from "neverthrow";
 import { prisma } from "~/db.server";
 import {
@@ -14,6 +15,9 @@ import {
   UpdatePlatformNotificationSchema,
 } from "./platformNotificationSchemas";
 import { isCliVersionEligible } from "./platformNotificationVersionTargeting";
+import { isCliNotificationExpired } from "~/utils/platformNotificationExpiration";
+
+const crumb = trail("webapp"); // @crumbs
 
 export {
   CreatePlatformNotificationSchema,
@@ -342,53 +346,23 @@ export async function getRecentChangelogs({
 
 // --- CLI: next notification for CLI surface ---
 
-function isCliNotificationExpired(
-  interaction: {
-    userId: string;
-    firstSeenAt: Date;
-    showCount: number;
-    cliDismissedAt: Date | null;
-  } | null,
-  notification: {
-    id: string;
-    cliMaxDaysAfterFirstSeen: number | null;
-    cliMaxShowCount: number | null;
-  }
-): boolean {
-  if (!interaction) return false;
-
-  let expired = false;
-
-  if (
-    notification.cliMaxShowCount !== null &&
-    interaction.showCount >= notification.cliMaxShowCount
-  ) {
-    expired = true;
-  }
-
-  if (!expired && notification.cliMaxDaysAfterFirstSeen !== null) {
-    const daysSinceFirstSeen =
-      (Date.now() - interaction.firstSeenAt.getTime()) / (1000 * 60 * 60 * 24);
-    if (daysSinceFirstSeen > notification.cliMaxDaysAfterFirstSeen) {
-      expired = true;
-    }
-  }
-
-  // For time-based expiration, persist the dismiss on the next request
-  // (showCount-based dismissal is handled inline at display time)
-  if (expired && !interaction.cliDismissedAt) {
-    void prisma.platformNotificationInteraction.update({
-      where: {
-        notificationId_userId: {
-          notificationId: notification.id,
-          userId: interaction.userId,
-        },
+async function persistCliNotificationDismissal({
+  notificationId,
+  userId,
+}: {
+  notificationId: string;
+  userId: string;
+}) {
+  crumb("persisting expired CLI notification dismissal", { notificationId, userId }); // @crumbs
+  await prisma.platformNotificationInteraction.update({
+    where: {
+      notificationId_userId: {
+        notificationId,
+        userId,
       },
-      data: { cliDismissedAt: new Date() },
-    });
-  }
-
-  return expired;
+    },
+    data: { cliDismissedAt: new Date() },
+  });
 }
 
 export async function getNextCliNotification({
@@ -485,7 +459,9 @@ export async function getNextCliNotification({
     const parsed = PayloadV1Schema.safeParse(n.payload);
     if (!parsed.success) continue;
     if (!isCliVersionEligible(parsed.data.data.minimumCliVersion, cliVersion)) continue;
-    if (isCliNotificationExpired(interaction, n)) continue;
+    // For time-based expiration, persist the dismiss on the next request
+    // (showCount-based dismissal is handled inline at display time).
+    if (await isCliNotificationExpired(interaction, n, persistCliNotificationDismissal)) continue;
 
     // Check cliShowEvery using the global request counter
     if (n.cliShowEvery !== null && requestCounter % n.cliShowEvery !== 0) {
