@@ -162,6 +162,7 @@ const USER_ACTOR_KIND = "user_actor";
 
 export type UserActorClaims = {
   userId: string;
+  exp: number;
   client?: string;
   sessionId?: string;
   // Optional scope cap (e.g. `["read:runs"]`) — ceilings the token below the
@@ -207,11 +208,18 @@ export async function verifyUserActorToken(
   if (!result.ok) return;
 
   const payload = result.payload;
-  if (payload.kind !== USER_ACTOR_KIND || typeof payload.sub !== "string") return;
+  if (
+    payload.kind !== USER_ACTOR_KIND ||
+    typeof payload.sub !== "string" ||
+    typeof payload.exp !== "number"
+  ) {
+    return;
+  }
 
   const act = payload.act as { client?: string; sessionId?: string } | undefined;
   return {
     userId: payload.sub,
+    exp: payload.exp,
     client: act?.client,
     sessionId: act?.sessionId,
     cap: Array.isArray(payload.cap) ? (payload.cap as string[]) : undefined,

@@ -46,6 +46,10 @@ const AggregationType = z.union([
 ]);
 export type AggregationType = z.infer<typeof AggregationType>;
 
+export const ChartSeriesColor = z
+  .string()
+  .regex(/^#[0-9a-fA-F]{6}$/, "Chart colors must use six-digit hex format");
+
 const chartConfigOptions = {
   chartType: ChartType,
   xAxisColumn: z.string().nullable(),
@@ -55,7 +59,7 @@ const chartConfigOptions = {
   sortByColumn: z.string().nullable(),
   sortDirection: SortDirection,
   aggregation: AggregationType,
-  seriesColors: z.record(z.string()).optional(),
+  seriesColors: z.record(ChartSeriesColor).optional(),
 };
 
 const ChartConfiguration = z.object({ ...chartConfigOptions });
