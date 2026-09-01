@@ -16,7 +16,7 @@ import type {
 import { isUserActorToken, verifyUserActorToken } from "@trigger.dev/plugins";
 import { createHash } from "node:crypto";
 import type { PrismaClient } from "@trigger.dev/database";
-import { validateJWT } from "@trigger.dev/core/v3/jwt";
+import { validateJWTWithFallbackKeys } from "@trigger.dev/core/v3/jwt";
 import { isDefaultDevBranch, sanitizeBranchName } from "@trigger.dev/core/v3/utils/gitBranch";
 import { buildFallbackAbility, buildJwtAbility, permissiveAbility } from "./ability.js";
 
@@ -122,7 +122,19 @@ class RoleBaseAccessFallbackController implements RoleBaseAccessController {
       }
 
       const signingKey = env.parentEnvironment?.apiKey ?? env.apiKey;
-      const result = await validateJWT(rawToken, signingKey);
+      const signingEnvironmentId = env.parentEnvironment?.id ?? env.id;
+      const result = await validateJWTWithFallbackKeys(rawToken, signingKey, async () => {
+        // @crumbs Branch JWTs are signed by their parent environment, so revoked-key grace
+        // must be resolved against the signing environment rather than the JWT subject.
+        const revokedApiKeys = await this.replica.revokedApiKey.findMany({
+          where: {
+            runtimeEnvironmentId: signingEnvironmentId,
+            expiresAt: { gt: new Date() },
+          },
+          select: { apiKey: true },
+        });
+        return revokedApiKeys.map(({ apiKey }) => apiKey);
+      });
       if (!result.ok) return { ok: false, status: 401, error: "Public Access Token is invalid" };
 
       const scopes = Array.isArray(result.payload.scopes)

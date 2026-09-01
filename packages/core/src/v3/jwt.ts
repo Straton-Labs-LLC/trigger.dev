@@ -71,3 +71,26 @@ export async function validateJWT(token: string, apiKey: string): Promise<Valida
     }
   }
 }
+
+export async function validateJWTWithFallbackKeys(
+  token: string,
+  primaryKey: string,
+  getFallbackKeys: () => Promise<Iterable<string>>
+): Promise<ValidationResult> {
+  const primaryResult = await validateJWT(token, primaryKey);
+  if (primaryResult.ok) {
+    return primaryResult;
+  }
+
+  // @crumbs Only consult rotated keys after the current key fails so the common auth path
+  // remains a single signature verification with no fallback lookup.
+  const fallbackKeys = await getFallbackKeys();
+  for (const fallbackKey of fallbackKeys) {
+    const fallbackResult = await validateJWT(token, fallbackKey);
+    if (fallbackResult.ok) {
+      return fallbackResult;
+    }
+  }
+
+  return primaryResult;
+}

@@ -1,5 +1,4 @@
 import { type ActionFunctionArgs, json } from "@remix-run/node";
-import { generateJWT as internal_generateJWT } from "@trigger.dev/core/v3";
 import { isUserActorToken, verifyUserActorToken } from "@trigger.dev/rbac";
 import { z } from "zod";
 import {
@@ -11,6 +10,7 @@ import {
 import { env as appEnv } from "~/env.server";
 import { logger } from "~/services/logger.server";
 import { authorizePatEnvironmentAccess } from "~/services/environmentVariableApiAccess.server";
+import { generateBoundedPublicJwt } from "~/services/publicJwt.server";
 
 const ParamsSchema = z.object({
   projectRef: z.string(),
@@ -23,7 +23,9 @@ const RequestBodySchema = z.object({
       scopes: z.array(z.string()).default([]),
     })
     .optional(),
-  expirationTime: z.union([z.number(), z.string()]).optional(),
+  expirationTime: z
+    .union([z.number().int().positive(), z.string().min(1).max(100)])
+    .optional(),
 });
 
 export async function action({ request, params }: ActionFunctionArgs) {
@@ -40,6 +42,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     // PAT route. `uatCap` (the token's optional scope cap) ceilings the
     // minted env JWT below.
     let uatCap: string[] | undefined;
+    let uatExpirationTime: number | undefined;
     let userActorId: string | undefined;
     let authenticationResult: AuthenticationResult | undefined;
     if (isUat) {
@@ -48,6 +51,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         return json({ error: "Invalid or Missing Access Token" }, { status: 401 });
       }
       uatCap = claims.cap;
+      uatExpirationTime = claims.exp;
       userActorId = claims.userId;
       // The env lookup keys purely on the user, identical to a PAT.
       authenticationResult = {
@@ -139,13 +143,21 @@ export async function action({ request, params }: ActionFunctionArgs) {
       ...(actorUserId ? { act: { sub: actorUserId } } : {}),
     };
 
-    const jwt = await internal_generateJWT({
+    const jwtResult = await generateBoundedPublicJwt({
       secretKey: runtimeEnv.apiKey,
       payload: claims,
-      expirationTime: parsedBody.data.expirationTime ?? "1h",
+      requestedExpirationTime: parsedBody.data.expirationTime,
+      delegatedExpirationTime: uatExpirationTime,
     });
+    if (!jwtResult.ok) {
+      const error =
+        jwtResult.reason === "expiration_exceeds_limit"
+          ? "expirationTime exceeds the allowed maximum"
+          : "Invalid expirationTime";
+      return json({ error }, { status: 400 });
+    }
 
-    return json({ token: jwt });
+    return json({ token: jwtResult.token });
   } catch (error) {
     if (error instanceof Response) throw error;
     logger.error("Failed to generate env JWT", { error });
