@@ -1,9 +1,7 @@
 import { type DataFunctionArgs } from "@remix-run/node";
-import fs from "fs";
-import os from "os";
-import path from "path";
-import { PassThrough } from "stream";
 import v8 from "v8";
+import { createHeapSnapshotResponse } from "~/services/adminDiagnostics.server";
+import { getRequestAbortSignal } from "~/services/httpAsyncStorage.server";
 import { requireAdminApiRequest } from "~/services/personalAccessToken.server";
 
 // Format date as yyyy-MM-dd HH_mm_ss_SSS
@@ -26,30 +24,10 @@ function formatDate(date: Date) {
 export async function loader({ request }: DataFunctionArgs) {
   await requireAdminApiRequest(request);
 
-  const tempDir = os.tmpdir();
-  const filepath = path.join(
-    tempDir,
-    `${getTaskIdentifier()}-${formatDate(new Date())}.heapsnapshot`
-  );
-
-  const snapshotPath = v8.writeHeapSnapshot(filepath);
-  if (!snapshotPath) {
-    throw new Response("No snapshot saved", { status: 500 });
-  }
-
-  const body = new PassThrough();
-  const stream = fs.createReadStream(snapshotPath);
-  stream.on("open", () => stream.pipe(body));
-  stream.on("error", (err) => body.end(err));
-  stream.on("end", () => body.end());
-
-  return new Response(body as any, {
-    status: 200,
-    headers: {
-      "Content-Type": "application/octet-stream",
-      "Content-Disposition": `attachment; filename="${path.basename(snapshotPath)}"`,
-      "Content-Length": (await fs.promises.stat(snapshotPath)).size.toString(),
-    },
+  return createHeapSnapshotResponse({
+    snapshot: v8.getHeapSnapshot(),
+    filename: `${getTaskIdentifier()}-${formatDate(new Date())}.heapsnapshot`,
+    abortSignal: getRequestAbortSignal(),
   });
 }
 
