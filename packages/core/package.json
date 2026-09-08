@@ -226,7 +226,7 @@
     "zod-validation-error": "^1.5.0"
   },
   "devDependencies": {
-    "@ai-sdk/provider-utils": "^1.0.22",
+    "@ai-sdk/provider-utils": "^3.0.28",
     "@arethetypeswrong/cli": "^0.18.5",
     "@epic-web/test-server": "^0.1.0",
     "@trigger.dev/database": "workspace:*",
