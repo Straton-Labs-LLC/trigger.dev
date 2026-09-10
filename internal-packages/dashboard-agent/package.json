@@ -20,7 +20,7 @@
     "@ai-sdk/provider": "3.0.8",
     "@trigger.dev/build": "workspace:*",
     "trigger.dev": "workspace:*",
-    "vitest": "4.1.7"
+    "vitest": "4.1.11"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
